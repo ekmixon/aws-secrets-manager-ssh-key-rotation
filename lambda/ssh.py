@@ -47,11 +47,11 @@ def run_command(ip_addresses, username, private_key, command):
 
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
+
     # connect and execute the command
     for ip in ip_addresses:
         try:
-            print("SSH: Connecting to %s as user %s." % (ip, username))
+            print(f"SSH: Connecting to {ip} as user {username}.")
             client.connect(ip, 
                     username = username,
                     pkey = key,

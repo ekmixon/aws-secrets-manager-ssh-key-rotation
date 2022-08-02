@@ -21,11 +21,9 @@ def get_private_key():
 
     else:
         secret = get_secret_value_response['SecretString']
-            
+
         secret_dict = json.loads(secret)
-        private_key = secret_dict['PrivateKey']
-        
-        return private_key
+        return secret_dict['PrivateKey']
 
 def copy_file(private_key, user, ip, local_path, remote_path):
     private_key_str = io.StringIO()
@@ -49,7 +47,7 @@ def copy_file(private_key, user, ip, local_path, remote_path):
     print('Opening SFTP session')
     sftp = paramiko.SFTPClient.from_transport(trans)
 
-    print('Copying local path {} to remote path {}'.format(local_path, remote_path))
+    print(f'Copying local path {local_path} to remote path {remote_path}')
     sftp.put(local_path, remote_path) 
 
     print('Closing SFTP session')

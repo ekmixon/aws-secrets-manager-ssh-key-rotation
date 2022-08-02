@@ -43,14 +43,8 @@ def lambda_handler(event, context):
     tag_value = os.environ['TAGVALUE']
 
     global TARGETS
-    TARGETS = [
-            {
-                "Key" : "tag:" + tag_name,
-                "Values" : [
-                    tag_value
-                    ]
-                }
-            ]
+    TARGETS = [{"Key": f"tag:{tag_name}", "Values": [tag_value]}]
+
 
     print(json.dumps(TARGETS))
     arn = event['SecretId']
@@ -63,18 +57,27 @@ def lambda_handler(event, context):
     # Make sure the version is staged correctly
     metadata = service_client.describe_secret(SecretId=arn)
     if not metadata['RotationEnabled']:
-        print("Secret %s is not enabled for rotation." % arn)
-        raise ValueError("Secret %s is not enabled for rotation." % arn)
+        print(f"Secret {arn} is not enabled for rotation.")
+        raise ValueError(f"Secret {arn} is not enabled for rotation.")
     versions = metadata['VersionIdsToStages']
     if token not in versions:
-        print("Secret version %s has no stage for rotation of secret %s." % (token, arn))
-        raise ValueError("Secret version %s has no stage for rotation of secret %s." % (token, arn))
+        print(f"Secret version {token} has no stage for rotation of secret {arn}.")
+        raise ValueError(
+            f"Secret version {token} has no stage for rotation of secret {arn}."
+        )
+
     if "AWSCURRENT" in versions[token]:
-        print("Secret version %s already set as AWSCURRENT for secret %s." % (token, arn))
+        print(f"Secret version {token} already set as AWSCURRENT for secret {arn}.")
         return
     elif "AWSPENDING" not in versions[token]:
-        print("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
-        raise ValueError("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
+        print(
+            f"Secret version {token} not set as AWSPENDING for rotation of secret {arn}."
+        )
+
+        raise ValueError(
+            f"Secret version {token} not set as AWSPENDING for rotation of secret {arn}."
+        )
+
 
     if step == "createSecret":
         create_secret(service_client, arn, token, context)
@@ -115,11 +118,11 @@ def create_secret(service_client, arn, token, context):
     # Now try to get the secret version, if that fails, put a new secret
     try:
         service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
-        print("createSecret: Successfully retrieved secret for %s." % arn)
+        print(f"createSecret: Successfully retrieved secret for {arn}.")
     except service_client.exceptions.ResourceNotFoundException:
 
         # generate a key-pair
-        print("createSecret: Generating a key pair with token %s." % (token))
+        print(f"createSecret: Generating a key pair with token {token}.")
         [priv, pub] = ssh.generate_key_pair(token)
 
         current_dict[PRIVATE_KEY] = priv
@@ -129,7 +132,9 @@ def create_secret(service_client, arn, token, context):
 
         # save the key-pair
         service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=secret_string, VersionStages=['AWSPENDING'])
-        print("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
+        print(
+            f"createSecret: Successfully put secret for ARN {arn} and version {token}."
+        )
 
 
 def set_secret(service_client, arn, token, context):
@@ -155,11 +160,19 @@ def set_secret(service_client, arn, token, context):
 
     ssm = SSM(context, TARGETS, USERNAME)
 
-    print("setSecret: Invoking Systems Manager to add the new public key with token %s." % pending_version)
+    print(
+        f"setSecret: Invoking Systems Manager to add the new public key with token {pending_version}."
+    )
+
     command_id = ssm.add_public_key(pending_dict[PUBLIC_KEY], pending_version)
-    print("setSecret: Waiting for Systems Manager command %s to complete." % (command_id))
+    print(
+        f"setSecret: Waiting for Systems Manager command {command_id} to complete."
+    )
+
     ssm.wait_completion(command_id)
-    print("setSecret: Systems Manager command %s completed successfully." % (command_id))
+    print(
+        f"setSecret: Systems Manager command {command_id} completed successfully."
+    )
 
 
 def test_secret(service_client, arn, token, context):
@@ -179,7 +192,7 @@ def test_secret(service_client, arn, token, context):
     """
     command = 'hostname'
     pending_dict = get_secret_dict(service_client, arn, "AWSPENDING")
-    print("testSecret: getting instance IDs for version %s" % (token))
+    print(f"testSecret: getting instance IDs for version {token}")
     ssm = SSM(context, TARGETS, USERNAME)
     ip_addresses = ssm.get_addrs_for_add_key(token)
 
@@ -211,14 +224,20 @@ def finish_secret(service_client, arn, token, context):
         if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
             if version == token:
                 # The correct version is already marked as current, return
-                print("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
+                print(
+                    f"finishSecret: Version {version} already marked as AWSCURRENT for {arn}"
+                )
+
                 return
             current_version = version
             break
 
     # Finalize by staging the secret version current
     service_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSCURRENT", MoveToVersionId=new_version, RemoveFromVersionId=current_version)
-    print("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (new_version, arn))
+    print(
+        f"finishSecret: Successfully set AWSCURRENT stage to version {new_version} for secret {arn}."
+    )
+
 
     # after change above:
     prior_version = current_version
@@ -227,11 +246,19 @@ def finish_secret(service_client, arn, token, context):
 
     ssm = SSM(context, TARGETS, USERNAME)
 
-    print("finishSecret: Invoking Systems Manager to delete the old public key with token %s." % (prior_version))
+    print(
+        f"finishSecret: Invoking Systems Manager to delete the old public key with token {prior_version}."
+    )
+
     command_id = ssm.del_public_key(prior_version)
-    print("finishSecret: Waiting for Systems Manager command %s to complete." % (command_id))
+    print(
+        f"finishSecret: Waiting for Systems Manager command {command_id} to complete."
+    )
+
     ssm.wait_completion(command_id)
-    print("finishSecret: Systems Manager command %s completed successfully." % (command_id))
+    print(
+        f"finishSecret: Systems Manager command {command_id} completed successfully."
+    )
 
 def get_secret_dict(service_client, arn, stage, token=None):
     """Gets the secret dictionary corresponding for the secret arn, stage, and token
@@ -265,8 +292,6 @@ def get_secret_dict(service_client, arn, stage, token=None):
     else:
         secret = service_client.get_secret_value(SecretId=arn, VersionStage=stage)
     plaintext = secret['SecretString']
-    secret_dict = json.loads(plaintext)
-
     # Parse and return the secret JSON string
-    return secret_dict
+    return json.loads(plaintext)
 

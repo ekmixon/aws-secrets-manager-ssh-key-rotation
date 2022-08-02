@@ -36,16 +36,17 @@ class SSM:
 
     def add_public_key(self, public_key, new_version):
         commands = [
-                f"key_file=~{self.username}/.ssh/authorized_keys",
-                f"COUNT=`grep -c \"{new_version}\" $key_file`",
-                f"if [ $COUNT -eq 0 ]",
-                f"  then",
-                f"    echo \"Adding public key with comment {new_version} to authorized_keys file for {self.username}\" ",
-                f"    echo \"{public_key}\" >> $key_file",
-                f"  else",
-                f"    echo \"Public key with comment {new_version} already exists\"",
-                f"fi"
-                ]
+            f"key_file=~{self.username}/.ssh/authorized_keys",
+            f"COUNT=`grep -c \"{new_version}\" $key_file`",
+            "if [ $COUNT -eq 0 ]",
+            "  then",
+            f"    echo \"Adding public key with comment {new_version} to authorized_keys file for {self.username}\" ",
+            f"    echo \"{public_key}\" >> $key_file",
+            "  else",
+            f"    echo \"Public key with comment {new_version} already exists\"",
+            "fi",
+        ]
+
         response = self.send_command(commands,'add_key', new_version)
         return response['Command']['CommandId']
 
@@ -92,11 +93,12 @@ class SSM:
         page_iter = paginator.paginate(Filters = filters)
         for page in page_iter:
             for r in page['Reservations']:
-                for i in r['Instances']:
-                    if(len(i['NetworkInterfaces']) != 0):
-                        # pluck the primary private IP address of the first ENI
-                        ip = i['NetworkInterfaces'][0]['PrivateIpAddress']
-                        private_ips.append(ip)
+                private_ips.extend(
+                    i['NetworkInterfaces'][0]['PrivateIpAddress']
+                    for i in r['Instances']
+                    if (len(i['NetworkInterfaces']) != 0)
+                )
+
         return private_ips
 
     def get_addrs_for_add_key(self, new_version):
@@ -106,7 +108,7 @@ class SSM:
         now = datetime.datetime.now()
         delta = datetime.timedelta(hours=SEARCH_WINDOW_HOURS)
         search_start = now - delta
-        search_start_iso = search_start.replace(microsecond=0).isoformat() + 'Z'
+        search_start_iso = f'{search_start.replace(microsecond=0).isoformat()}Z'
 
         search_comment = f"add_key {new_version}"
         # Find the SSM Run Command Invocation for the add_key:
@@ -127,7 +129,7 @@ class SSM:
                         command_id = c['CommandId']
                         break
 
-        if(command_id == None):
+        if command_id is None:
             # Could not find a Successful command, flag an error
             raise CommandError('Run Command not found',
                     f"Could not find Successful Run Command with comment 'add_key {new_version}'")
@@ -135,8 +137,5 @@ class SSM:
         paginator = self.client.get_paginator('list_command_invocations')
         page_iter = paginator.paginate(CommandId = command_id)
         for page in page_iter:
-            for c in page['CommandInvocations']:
-                instance_ids.append(c['InstanceId'])
-
-        ip_addresses = self.get_private_ips(instance_ids)
-        return ip_addresses
+            instance_ids.extend(c['InstanceId'] for c in page['CommandInvocations'])
+        return self.get_private_ips(instance_ids)
